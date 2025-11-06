@@ -49,6 +49,7 @@ export default function TodoList({ userId }: TodoListProps) {
         updatedAt: new Date().toISOString(),
       });
       fetchTodos();
+      window.dispatchEvent(new Event('todoUpdated'));
     } catch (error) {
       console.error('Error updating todo:', error);
     }
@@ -58,6 +59,7 @@ export default function TodoList({ userId }: TodoListProps) {
     try {
       await db.deleteDocument(COLLECTIONS.TODOS, id);
       fetchTodos();
+      window.dispatchEvent(new Event('todoUpdated'));
     } catch (error) {
       console.error('Error deleting todo:', error);
     }
