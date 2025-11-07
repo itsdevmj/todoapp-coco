@@ -17,10 +17,45 @@ export default function TodoList({ userId }: TodoListProps) {
   useEffect(() => {
     fetchTodos();
     
-    const handleTodoAdded = () => fetchTodos();
-    window.addEventListener('todoAdded', handleTodoAdded);
+    // Optimistic add - add todo immediately to UI
+    const handleTodoAdded = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const newTodo = customEvent.detail;
+      setTodos(prev => [{
+        id: `temp-${Date.now()}`, // Temporary ID
+        ...newTodo
+      }, ...prev]);
+    };
     
-    return () => window.removeEventListener('todoAdded', handleTodoAdded);
+    // Replace temp todo with real one from server
+    const handleTodoCreated = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const serverTodo = customEvent.detail;
+      setTodos(prev => prev.map(todo => 
+        todo.id.toString().startsWith('temp-') && todo.title === serverTodo.data.title
+          ? { id: serverTodo.id, ...serverTodo.data }
+          : todo
+      ));
+    };
+    
+    // Remove failed todo
+    const handleTodoAddFailed = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const failedTodo = customEvent.detail;
+      setTodos(prev => prev.filter(todo => 
+        !(todo.id.toString().startsWith('temp-') && todo.title === failedTodo.title)
+      ));
+    };
+    
+    window.addEventListener('todoAdded', handleTodoAdded as EventListener);
+    window.addEventListener('todoCreated', handleTodoCreated as EventListener);
+    window.addEventListener('todoAddFailed', handleTodoAddFailed as EventListener);
+    
+    return () => {
+      window.removeEventListener('todoAdded', handleTodoAdded as EventListener);
+      window.removeEventListener('todoCreated', handleTodoCreated as EventListener);
+      window.removeEventListener('todoAddFailed', handleTodoAddFailed as EventListener);
+    };
   }, [userId]);
 
   const fetchTodos = async () => {
@@ -43,25 +78,51 @@ export default function TodoList({ userId }: TodoListProps) {
   };
 
   const handleToggle = async (todo: Todo) => {
+    // Optimistic update - update UI immediately
+    setTodos(prev => prev.map(t => 
+      t.id === todo.id 
+        ? { ...t, completed: !t.completed, updatedAt: new Date().toISOString() }
+        : t
+    ));
+    
+    window.dispatchEvent(new Event('todoUpdated'));
+    
     try {
       await db.updateDocument(COLLECTIONS.TODOS, todo.id, {
         completed: !todo.completed,
         updatedAt: new Date().toISOString(),
       });
-      fetchTodos();
-      window.dispatchEvent(new Event('todoUpdated'));
     } catch (error) {
       console.error('Error updating todo:', error);
+      // Revert on error
+      setTodos(prev => prev.map(t => 
+        t.id === todo.id 
+          ? { ...t, completed: todo.completed }
+          : t
+      ));
+      alert('Failed to update todo. Please try again.');
     }
   };
 
   const handleDelete = async (id: string) => {
+    // Store the todo in case we need to restore it
+    const deletedTodo = todos.find(t => t.id === id);
+    
+    // Optimistic delete - remove from UI immediately
+    setTodos(prev => prev.filter(t => t.id !== id));
+    window.dispatchEvent(new Event('todoUpdated'));
+    
     try {
       await db.deleteDocument(COLLECTIONS.TODOS, id);
-      fetchTodos();
-      window.dispatchEvent(new Event('todoUpdated'));
     } catch (error) {
       console.error('Error deleting todo:', error);
+      // Revert on error
+      if (deletedTodo) {
+        setTodos(prev => [deletedTodo, ...prev].sort((a, b) => 
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        ));
+      }
+      alert('Failed to delete todo. Please try again.');
     }
   };
 

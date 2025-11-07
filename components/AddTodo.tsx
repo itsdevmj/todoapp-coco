@@ -16,33 +16,36 @@ export default function AddTodo({ userId }: AddTodoProps) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return;
+    
+    const newTodo = {
+      title: title.trim(),
+      description: description.trim(),
+      completed: false,
+      userId,
+      priority,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
 
-    setLoading(true);
+    // Clear form immediately for instant feedback
+    setTitle('');
+    setDescription('');
+    setPriority('medium');
+    
+    // Dispatch event immediately with the new todo data
+    window.dispatchEvent(new CustomEvent('todoAdded', { detail: newTodo }));
+
     try {
-      const newTodo = {
-        title: title.trim(),
-        description: description.trim(),
-        completed: false,
-        userId,
-        priority,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-
       console.log('Creating todo:', newTodo);
-
       const result = await db.createDocument(COLLECTIONS.TODOS, newTodo);
       console.log('Todo created:', result);
       
-      setTitle('');
-      setDescription('');
-      setPriority('medium');
-      window.dispatchEvent(new Event('todoAdded'));
+      // Dispatch event with actual ID from server
+      window.dispatchEvent(new CustomEvent('todoCreated', { detail: result }));
     } catch (error) {
       console.error('Error creating todo:', error);
       alert(`Failed to create todo: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    } finally {
-      setLoading(false);
+      window.dispatchEvent(new CustomEvent('todoAddFailed', { detail: newTodo }));
     }
   };
 
